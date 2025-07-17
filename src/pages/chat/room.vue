@@ -185,14 +185,14 @@ const getPartnerInfo = async () => {
         // 获取对方的用户信息
         const userResult = await db.collection('users')
           .where({
-            userId: partnerUserId
+            uid: partnerUserId
           })
           .get()
         
         if (userResult.data.length > 0) {
           const partner = userResult.data[0]
           partnerInfo.value = {
-            userId: partner.userId,
+            userId: partner.uid,
             nickname: partner.nickname || '神秘聊友',
             avatar: partner.avatar || '👤'
           }

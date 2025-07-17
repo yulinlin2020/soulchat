@@ -116,15 +116,58 @@ const getUserInfo = async () => {
   try {
     const loginState = await auth.getLoginState()
     if (loginState) {
-      userInfo.value = loginState.user || {}
+      const authUser = loginState.user || {}
+      console.log('用户信息:', authUser)
       
-      // 如果没有昵称，生成一个随机昵称
-      if (!userInfo.value.nickname) {
-        const randomNicknames = [
-          '神秘旅人', '夜空守望者', '晨曦使者', '星海漫游者', '风中的诗',
-          '时光旅者', '梦境探索者', '银河系漫步', '彩虹收集者', '云端舞者'
-        ]
-        userInfo.value.nickname = randomNicknames[Math.floor(Math.random() * randomNicknames.length)]
+      // 从数据库获取完整的用户信息
+      const result = await app.callFunction({
+        name: 'userProfile',
+        data: {
+          action: 'get',
+          uid: authUser.uid
+        }
+      })
+      
+      console.log('获取用户信息结果:', result)
+      
+      if (result.result.code === 0) {
+        // 用户已存在，使用数据库中的信息
+        userInfo.value = {
+          ...authUser,
+          ...result.result.data
+        }
+            } else if (result.result.code === 1) {
+        // 用户不存在，创建新用户
+        console.log('用户不存在，准备创建新用户:', authUser)
+        
+        const createResult = await app.callFunction({
+          name: 'userProfile',
+          data: {
+            action: 'create',
+            uid: authUser.uid,
+            authUserInfo: {
+              phone: (authUser as any).phone || '',
+              customUserId: (authUser as any).customUserId || '',
+              loginType: (authUser as any).loginType || 'phone',
+              avatar: (authUser as any).avatar || ''
+            }
+          }
+        })
+        
+        console.log('创建用户信息结果:', createResult)
+        
+        if (createResult.result && createResult.result.code === 0) {
+          userInfo.value = {
+            ...authUser,
+            ...createResult.result.data
+          }
+          showToast('欢迎使用SoulChat！已为您生成专属昵称', 'success')
+        } else {
+          console.error('创建用户失败，详细信息:', createResult)
+          throw new Error(createResult.result?.message || '创建用户信息失败')
+        }
+      } else {
+        throw new Error(result.result.message || '获取用户信息失败')
       }
     } else {
       // 未登录，跳转到登录页
@@ -133,9 +176,9 @@ const getUserInfo = async () => {
         navigateTo('/pages/login/phone-login', 'redirectTo')
       }, 1500)
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('获取用户信息失败:', error)
-    showToast('获取用户信息失败', 'error')
+    showToast(error.message || '获取用户信息失败', 'error')
   }
 }
 
@@ -283,7 +326,7 @@ const startMatchWatcher = () => {
         
         if (snapshot.docs.length > 0) {
           const matchedRecord = snapshot.docs.find((doc: any) => 
-            doc.userId === userInfo.value.uid && doc.status === 'matched'
+            doc.uid === userInfo.value.uid && doc.status === 'matched'
           )
           
           if (matchedRecord) {

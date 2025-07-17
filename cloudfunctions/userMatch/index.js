@@ -57,7 +57,7 @@ async function joinMatchQueue(uid, event) {
     // 1. 检查用户是否已经在队列中
     const existingQueue = await db.collection('match_queue')
       .where({
-        userId: uid,
+        uid: uid,
         status: 'waiting'
       })
       .get()
@@ -73,13 +73,10 @@ async function joinMatchQueue(uid, event) {
       }
     }
     
-    // 2. 更新或创建用户信息
-    await updateUserInfo(uid, userInfo)
-    
-    // 3. 查找等待中的其他用户
+    // 2. 查找等待中的其他用户
     const waitingUsers = await db.collection('match_queue')
       .where({
-        userId: _.neq(uid),
+        uid: _.neq(uid),
         status: 'waiting',
         createTime: _.gte(new Date(Date.now() - 30000)) // 30秒内的队列记录
       })
@@ -90,7 +87,7 @@ async function joinMatchQueue(uid, event) {
     if (waitingUsers.data.length > 0) {
       // 找到匹配用户，创建聊天房间
       const matchedUser = waitingUsers.data[0]
-      const roomId = await createChatRoom(uid, matchedUser.userId)
+      const roomId = await createChatRoom(uid, matchedUser.uid)
       
       // 更新两个用户的匹配状态
       await Promise.all([
@@ -100,15 +97,16 @@ async function joinMatchQueue(uid, event) {
           roomId: roomId
         }),
         db.collection('match_queue').add({
-          userId: uid,
+          uid: uid,
           status: 'matched',
           createTime: new Date(),
-          matchedWith: matchedUser.userId,
-          roomId: roomId
+          matchedWith: matchedUser.uid,
+          roomId: roomId,
+          userInfo: userInfo
         })
       ])
       
-      console.log('匹配成功:', { user1: uid, user2: matchedUser.userId, roomId })
+      console.log('匹配成功:', { user1: uid, user2: matchedUser.uid, roomId })
       
       return {
         code: 0,
@@ -116,13 +114,14 @@ async function joinMatchQueue(uid, event) {
         data: {
           status: 'matched',
           roomId: roomId,
-          matchedWith: matchedUser.userId
+          matchedWith: matchedUser.uid
         }
       }
     } else {
       // 没有找到匹配用户，加入等待队列
       const queueResult = await db.collection('match_queue').add({
-        userId: uid,
+        uid: uid,
+        userInfo: userInfo,
         status: 'waiting',
         createTime: new Date()
       })
@@ -152,18 +151,10 @@ async function cancelMatch(uid) {
     // 删除用户的匹配队列记录
     await db.collection('match_queue')
       .where({
-        userId: uid,
+        uid: uid,
         status: _.in(['waiting', 'matched'])
       })
       .remove()
-    
-    // 更新用户状态
-    await db.collection('users')
-      .where({ userId: uid })
-      .update({
-        status: 'online',
-        lastActive: new Date()
-      })
     
     console.log('取消匹配成功:', { uid })
     
@@ -187,7 +178,7 @@ async function checkMatchStatus(uid) {
   try {
     const queueResult = await db.collection('match_queue')
       .where({
-        userId: uid,
+        uid: uid,
         status: _.in(['waiting', 'matched'])
       })
       .orderBy('createTime', 'desc')
@@ -244,39 +235,7 @@ async function checkMatchStatus(uid) {
   }
 }
 
-// 更新用户信息
-async function updateUserInfo(uid, userInfo) {
-  const userData = {
-    userId: uid,
-    nickname: userInfo.nickname || generateRandomNickname(),
-    avatar: userInfo.avatar || '👤',
-    status: 'matching',
-    lastActive: new Date()
-  }
-  
-  try {
-    // 先查询用户是否存在
-    const existingUser = await db.collection('users')
-      .where({ userId: uid })
-      .get()
-    
-    if (existingUser.data.length > 0) {
-      // 用户存在，更新信息
-      await db.collection('users')
-        .where({ userId: uid })
-        .update(userData)
-    } else {
-      // 用户不存在，创建新用户
-      userData.createTime = new Date()
-      await db.collection('users').add(userData)
-    }
-    
-    console.log('用户信息更新成功:', { uid, userData })
-  } catch (error) {
-    console.error('更新用户信息失败:', error)
-    throw error
-  }
-}
+
 
 // 创建聊天房间
 async function createChatRoom(user1, user2) {
@@ -290,18 +249,6 @@ async function createChatRoom(user1, user2) {
   try {
     const roomResult = await db.collection('chat_rooms').add(roomData)
     
-    // 更新两个用户的状态为聊天中
-    await Promise.all([
-      db.collection('users').where({ userId: user1 }).update({
-        status: 'chatting',
-        lastActive: new Date()
-      }),
-      db.collection('users').where({ userId: user2 }).update({
-        status: 'chatting', 
-        lastActive: new Date()
-      })
-    ])
-    
     console.log('聊天房间创建成功:', { roomId: roomResult.id, participants: [user1, user2] })
     
     return roomResult.id
@@ -311,14 +258,4 @@ async function createChatRoom(user1, user2) {
   }
 }
 
-// 生成随机昵称
-function generateRandomNickname() {
-  const adjectives = ['神秘', '勇敢', '智慧', '温柔', '活泼', '沉静', '优雅', '坚强', '善良', '有趣']
-  const nouns = ['旅人', '探索者', '守望者', '使者', '漫游者', '诗人', '舞者', '收集者', '追逐者', '捕手']
-  
-  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)]
-  const noun = nouns[Math.floor(Math.random() * nouns.length)]
-  const number = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-  
-  return `${adjective}${noun}${number}`
-} 
+ 
