@@ -172,26 +172,41 @@ const initChatRoom = async () => {
 // 获取聊天伙伴信息
 const getPartnerInfo = async () => {
   try {
+    if (!roomId) {
+      console.error('roomId为空')
+      partnerInfo.value = { nickname: '神秘聊友', avatar: '👤' }
+      return
+    }
+    
     // 通过房间ID获取房间信息，找到聊天伙伴
     const db = app.database()
     const roomResult = await db.collection('chat_rooms')
-      .doc(roomId)
+      .where({
+        _id: roomId
+      })
       .get()
-    
-    if (roomResult.data.length > 0) {
+     
+    if (roomResult.data && roomResult.data.length > 0) {
       const room = roomResult.data[0]
       const participants = room.participants || []
+      console.log('当前用户ID详细信息:', currentUserId.value)
       
       // 找到对方的userId（不是当前用户的）
-      const partnerUserId = participants.find((id: string) => id !== currentUserId.value)
+      const partnerUserId = participants.find((id: string) => {
+        return id !== currentUserId.value
+      })
+      console.log('聊天伙伴ID:', partnerUserId)
       
       if (partnerUserId) {
         // 获取对方的用户信息
+        // console.log('准备查询用户信息:', partnerUserId)
         const userResult = await db.collection('users')
           .where({
             uid: partnerUserId
           })
           .get()
+        
+        // console.log('获取用户信息结果:', userResult)
         
         if (userResult.data.length > 0) {
           const partner = userResult.data[0]
@@ -200,7 +215,7 @@ const getPartnerInfo = async () => {
             nickname: partner.nickname || '神秘聊友',
             avatar: partner.avatar || '👤'
           }
-          console.log('获取聊天伙伴信息成功:', partnerInfo.value)
+          // console.log('获取聊天伙伴信息成功:', partnerInfo.value)
         } else {
           console.error('未找到聊天伙伴用户信息')
           partnerInfo.value = {
@@ -234,7 +249,6 @@ const getPartnerInfo = async () => {
 // 加载消息
 const loadMessages = async () => {
   try {
-    console.log('加载历史消息, roomId:', roomId)
     
     const result = await app.callFunction({
       name: 'messageManager',
@@ -245,7 +259,7 @@ const loadMessages = async () => {
       }
     })
     
-    console.log('获取历史消息结果:', result)
+    // console.log('获取历史消息结果:', result)
     
     if (result.result.code === 0) {
       messages.value = result.result.data.messages || []
@@ -288,8 +302,8 @@ const sendMessage = async () => {
       status: 'sending'
     }
 
-    // 添加到消息列表
-    messages.value.push(newMessage)
+    // 添加到消息列表 - 使用响应式更新
+    messages.value = [...messages.value, newMessage]
     inputText.value = ''
 
     // 滚动到底部
@@ -315,11 +329,21 @@ const sendMessage = async () => {
     
     if (result.result.code === 0) {
       // 发送成功，更新消息状态
-      newMessage.status = 'sent'
-      ;(newMessage as any)._id = result.result.data._id
+      const messageIndex = messages.value.findIndex(msg => msg.id === newMessage.id)
+      if (messageIndex !== -1) {
+        messages.value[messageIndex].status = 'sent'
+        ;(messages.value[messageIndex] as any)._id = result.result.data._id
+        // 强制触发Vue响应式更新
+        messages.value = [...messages.value]
+      }
     } else {
       // 发送失败
-      newMessage.status = 'failed'
+      const messageIndex = messages.value.findIndex(msg => msg.id === newMessage.id)
+      if (messageIndex !== -1) {
+        messages.value[messageIndex].status = 'failed'
+        // 强制触发Vue响应式更新
+        messages.value = [...messages.value]
+      }
       showToast(result.result.message || '发送失败', 'error')
     }
     
@@ -334,6 +358,8 @@ const sendMessage = async () => {
     const lastMessage = messages.value[messages.value.length - 1]
     if (lastMessage) {
       lastMessage.status = 'failed'
+      // 强制触发Vue响应式更新
+      messages.value = [...messages.value]
     }
   }
 }
@@ -361,47 +387,55 @@ const startMessageWatcher = () => {
   try {
     const db = app.database()
     
+    // 记录当前最新消息的时间，用于判断是否是新消息
+    const lastMessageTime = messages.value.length > 0 
+      ? messages.value[messages.value.length - 1].sendTime 
+      : new Date(0)
+    
     messageWatcher = db.collection('messages')
       .where({
         roomId: roomId
       })
-      .orderBy('sendTime', 'desc')
-      .limit(1)
+      .orderBy('sendTime', 'asc')
       .watch({
-        onChange: (snapshot) => {
-          console.log('收到新消息:', snapshot)
+        onChange: (snapshot: any) => {
+          console.log('收到消息变化:', snapshot)
           
-          if (snapshot.docs.length > 0) {
-            const newMessage = snapshot.docs[0]
-            
-            // 检查是否是新消息（不是自己发送的）
-            if (newMessage.senderId !== currentUserId.value) {
-              // 检查消息是否已存在
-              const existingMessage = messages.value.find(msg => 
-                (msg as any)._id === newMessage._id || 
-                (msg.sendTime.getTime() === new Date(newMessage.sendTime).getTime() && 
-                 msg.senderId === newMessage.senderId)
-              )
-              
-              if (!existingMessage) {
-                console.log('添加新消息到列表:', newMessage)
-                messages.value.push({
-                  id: newMessage._id,
-                  roomId: newMessage.roomId,
-                  senderId: newMessage.senderId,
-                  content: newMessage.content,
-                  type: newMessage.type,
-                  sendTime: new Date(newMessage.sendTime),
-                  status: newMessage.status
-                })
+          // 检查是否有新文档
+          if (snapshot.docs && snapshot.docs.length > 0) {
+            snapshot.docs.forEach((newMessage: any) => {
+              // 只处理在监听启动后发送的新消息
+              if (new Date(newMessage.sendTime) > lastMessageTime) {
+                // 检查消息是否已存在
+                const existingMessage = messages.value.find(msg => 
+                  (msg as any)._id === newMessage._id
+                )
                 
-                // 滚动到底部
-                scrollToBottom()
-                
-                // 标记为已读
-                markMessagesAsRead()
+                if (!existingMessage) {
+                  console.log('添加新消息到列表:', newMessage)
+                  const messageObj = {
+                    id: newMessage._id,
+                    roomId: newMessage.roomId,
+                    senderId: newMessage.senderId,
+                    content: newMessage.content,
+                    type: newMessage.type,
+                    sendTime: new Date(newMessage.sendTime),
+                    status: newMessage.status
+                  }
+                  
+                  // 使用响应式的方式添加消息
+                  messages.value = [...messages.value, messageObj]
+                  
+                  // 滚动到底部
+                  scrollToBottom()
+                  
+                  // 如果不是自己发送的消息，标记为已读
+                  if (newMessage.senderId !== currentUserId.value) {
+                    markMessagesAsRead()
+                  }
+                }
               }
-            }
+            })
           }
         },
         onError: (error) => {

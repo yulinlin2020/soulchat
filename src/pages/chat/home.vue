@@ -270,15 +270,16 @@ const cancelMatching = async () => {
 const matchSuccess = (roomId: string) => {
   clearMatchTimer()
   matchStatus.value = 'matched'
-  userStatus.value = 'online'  // 重置为在线状态，不进入聊天
+  userStatus.value = 'chatting'
   
-  showToast(`匹配成功！房间ID: ${roomId}`, 'success')
+  showToast('匹配成功！即将进入聊天室', 'success')
   
-  // 3秒后重置状态，可以重新匹配
+  console.log('匹配成功，准备进入聊天房间:', roomId)
+  
+  // 1.5秒后跳转到聊天房间
   setTimeout(() => {
-    matchStatus.value = 'idle'
-    userStatus.value = 'online'
-  }, 3000)
+    navigateTo(`/pages/chat/room?roomId=${roomId}`, 'navigateTo')
+  }, 1500)
 }
 
 // 匹配失败
