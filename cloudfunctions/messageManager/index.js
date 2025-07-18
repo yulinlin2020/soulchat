@@ -66,25 +66,25 @@ async function sendMessage(roomId, message, senderUid) {
       senderId: senderUid,
       content: message.content,
       type: message.type || 'text',
-      sendTime: new Date(),
+      sendTime: new Date().getTime(), // 使用时间戳格式
       status: 'sent',
       readBy: [senderUid] // 发送者自动标记为已读
     }
-    
+    console.log('消息发送newMessage:', newMessage)
     // 保存消息到数据库
     const messageResult = await db.collection('messages').add(newMessage)
     
     // 更新聊天房间的最后消息时间
     await db.collection('chat_rooms').doc(roomId).update({
-      lastMessageTime: new Date(),
+      lastMessageTime: new Date().getTime(), // 使用时间戳格式
       lastMessage: {
         content: message.content,
         senderId: senderUid,
-        sendTime: new Date()
+        sendTime: new Date().getTime() // 使用时间戳格式
       }
     })
     
-    console.log('消息发送成功:', messageResult.id)
+    console.log('消息发送成功:', messageResult)
     
     return {
       code: 0,
@@ -126,7 +126,7 @@ async function getMessageHistory(roomId, limit = 20, offset = 0) {
     
     // 按时间正序排列（最早的在前面）
     const messages = result.data.reverse()
-    
+    console.log("数据库读取出来的message",messages)
     return {
       code: 0,
       message: '获取成功',

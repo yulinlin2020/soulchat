@@ -122,6 +122,9 @@ const showExitDialog = ref(false)
 // 消息监听器
 let messageWatcher: any = null
 
+// 防重复发送
+let lastSendTime = 0
+
 // 计算属性
 const canSend = computed(() => {
   return inputText.value.trim().length > 0 && !roomClosed.value
@@ -287,9 +290,20 @@ const sendMessage = async () => {
 
   const messageText = inputText.value.trim()
   if (!messageText) return
+  
+  // 防重复发送：500ms内不允许重复发送相同内容
+  const now = Date.now()
+  if (now - lastSendTime < 500) {
+    console.log('发送太频繁，忽略重复请求')
+    return
+  }
+  lastSendTime = now
 
   try {
     sendingMessage.value = true
+    
+    // 立即清空输入框，防止重复发送
+    inputText.value = ''
 
     // 创建消息对象
     const newMessage = {
@@ -298,13 +312,12 @@ const sendMessage = async () => {
       senderId: currentUserId.value,
       content: messageText,
       type: 'text',
-      sendTime: new Date(),
+      sendTime: new Date().getTime(),
       status: 'sending'
     }
 
     // 添加到消息列表 - 使用响应式更新
     messages.value = [...messages.value, newMessage]
-    inputText.value = ''
 
     // 滚动到底部
     scrollToBottom()
@@ -387,11 +400,6 @@ const startMessageWatcher = () => {
   try {
     const db = app.database()
     
-    // 记录当前最新消息的时间，用于判断是否是新消息
-    const lastMessageTime = messages.value.length > 0 
-      ? messages.value[messages.value.length - 1].sendTime 
-      : new Date(0)
-    
     messageWatcher = db.collection('messages')
       .where({
         roomId: roomId
@@ -400,15 +408,22 @@ const startMessageWatcher = () => {
       .watch({
         onChange: (snapshot: any) => {
           console.log('收到消息变化:', snapshot)
-          
-          // 检查是否有新文档
-          if (snapshot.docs && snapshot.docs.length > 0) {
-            snapshot.docs.forEach((newMessage: any) => {
-              // 只处理在监听启动后发送的新消息
-              if (new Date(newMessage.sendTime) > lastMessageTime) {
-                // 检查消息是否已存在
+            
+          // 处理文档变化，而不是所有文档
+          if (snapshot.docChanges && snapshot.docChanges.length > 0) {
+            snapshot.docChanges.forEach((change: any) => {
+              console.log('文档变化类型:', change.queueType, change.doc)
+              
+              // 只处理新增的消息
+              if (change.queueType === 'enqueue') {
+                const newMessage = change.doc
+                
+                // 检查消息是否已存在（通过_id或临时id）
                 const existingMessage = messages.value.find(msg => 
-                  (msg as any)._id === newMessage._id
+                  (msg as any)._id === newMessage._id || 
+                  (msg.senderId === newMessage.senderId && 
+                   msg.content === newMessage.content && 
+                   Math.abs(msg.sendTime - newMessage.sendTime) < 1000) // 1秒内的相同内容消息
                 )
                 
                 if (!existingMessage) {
@@ -419,19 +434,31 @@ const startMessageWatcher = () => {
                     senderId: newMessage.senderId,
                     content: newMessage.content,
                     type: newMessage.type,
-                    sendTime: new Date(newMessage.sendTime),
+                    sendTime: newMessage.sendTime,
                     status: newMessage.status
                   }
-                  
+                  // console.log('messageObj:', messageObj)
                   // 使用响应式的方式添加消息
                   messages.value = [...messages.value, messageObj]
-                  
+                  // console.log("最后一条数据", messages.value[messages.value.length - 1])
                   // 滚动到底部
                   scrollToBottom()
                   
                   // 如果不是自己发送的消息，标记为已读
                   if (newMessage.senderId !== currentUserId.value) {
                     markMessagesAsRead()
+                  }
+                } else if (existingMessage.senderId === currentUserId.value) {
+                  // 如果是自己发送的消息，更新状态和_id
+                  const messageIndex = messages.value.findIndex(msg => 
+                    msg.senderId === newMessage.senderId && 
+                    msg.content === newMessage.content && 
+                    Math.abs(msg.sendTime - newMessage.sendTime) < 1000
+                  )
+                  if (messageIndex !== -1) {
+                    messages.value[messageIndex].status = 'sent'
+                    ;(messages.value[messageIndex] as any)._id = newMessage._id
+                    messages.value = [...messages.value] // 触发响应式更新
                   }
                 }
               }
@@ -463,9 +490,9 @@ const scrollToBottom = async () => {
 }
 
 // 格式化消息时间
-const formatMessageTime = (time: Date) => {
+const formatMessageTime = (time: number | Date) => {
   const now = new Date()
-  const msgTime = new Date(time)
+  const msgTime = typeof time === 'number' ? new Date(time) : new Date(time)
   const diffMinutes = Math.floor((now.getTime() - msgTime.getTime()) / (1000 * 60))
 
   if (diffMinutes < 1) return '刚刚'
