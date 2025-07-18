@@ -119,6 +119,9 @@ const scrollTop = ref(0)
 // 对话框状态
 const showExitDialog = ref(false)
 
+// 消息监听器
+let messageWatcher: any = null
+
 // 计算属性
 const canSend = computed(() => {
   return inputText.value.trim().length > 0 && !roomClosed.value
@@ -153,10 +156,11 @@ const initChatRoom = async () => {
 
     connectionStatus.value = '在线'
 
-    // 模拟加载历史消息
+    // 加载历史消息
     await loadMessages()
 
-    // TODO: 这里将来会监听实时消息
+    // 启动实时消息监听
+    startMessageWatcher()
     console.log('开始监听聊天室消息...')
     
   } catch (error) {
@@ -229,11 +233,38 @@ const getPartnerInfo = async () => {
 
 // 加载消息
 const loadMessages = async () => {
-  // 模拟一些历史消息
-  messages.value = []
-  
-  // 滚动到底部
-  scrollToBottom()
+  try {
+    console.log('加载历史消息, roomId:', roomId)
+    
+    const result = await app.callFunction({
+      name: 'messageManager',
+      data: {
+        action: 'getHistory',
+        roomId: roomId,
+        limit: 50
+      }
+    })
+    
+    console.log('获取历史消息结果:', result)
+    
+    if (result.result.code === 0) {
+      messages.value = result.result.data.messages || []
+      
+      // 标记消息为已读
+      if (messages.value.length > 0) {
+        await markMessagesAsRead()
+      }
+    } else {
+      console.error('获取历史消息失败:', result.result.message)
+      messages.value = []
+    }
+    
+    // 滚动到底部
+    scrollToBottom()
+  } catch (error) {
+    console.error('加载消息失败:', error)
+    messages.value = []
+  }
 }
 
 // 发送消息
@@ -264,21 +295,35 @@ const sendMessage = async () => {
     // 滚动到底部
     scrollToBottom()
 
-    // TODO: 这里将来会调用云函数发送消息
+    // 调用云函数发送消息
     console.log('发送消息:', newMessage)
-
-    // 模拟发送成功
-    setTimeout(() => {
-      newMessage.status = 'sent'
-      sendingMessage.value = false
-
-      // 模拟接收对方回复（50%概率）
-      if (Math.random() > 0.5) {
-        setTimeout(() => {
-          receiveMessage()
-        }, 1000 + Math.random() * 3000)
+    
+    const result = await app.callFunction({
+      name: 'messageManager',
+      data: {
+        action: 'send',
+        roomId: roomId,
+        uid: currentUserId.value,
+        message: {
+          content: messageText,
+          type: 'text'
+        }
       }
-    }, 1000)
+    })
+    
+    console.log('发送消息结果:', result)
+    
+    if (result.result.code === 0) {
+      // 发送成功，更新消息状态
+      newMessage.status = 'sent'
+      ;(newMessage as any)._id = result.result.data._id
+    } else {
+      // 发送失败
+      newMessage.status = 'failed'
+      showToast(result.result.message || '发送失败', 'error')
+    }
+    
+    sendingMessage.value = false
 
   } catch (error) {
     console.error('发送消息失败:', error)
@@ -293,32 +338,88 @@ const sendMessage = async () => {
   }
 }
 
-// 模拟接收消息
-const receiveMessage = () => {
-  const replies = [
-    '你好呀！很高兴遇见你',
-    '今天天气不错呢',
-    '你平时都喜欢做什么？',
-    '哈哈哈，有意思',
-    '说得对',
-    '我也这样觉得',
-    '真的吗？',
-    '太棒了！',
-    '嗯嗯，没错'
-  ]
-
-  const replyMessage = {
-    id: Date.now().toString(),
-    roomId: roomId,
-    senderId: 'partner_id',
-    content: replies[Math.floor(Math.random() * replies.length)],
-    type: 'text',
-    sendTime: new Date(),
-    status: 'sent'
+// 标记消息为已读
+const markMessagesAsRead = async () => {
+  try {
+    await app.callFunction({
+      name: 'messageManager',
+      data: {
+        action: 'markRead',
+        roomId: roomId,
+        uid: currentUserId.value
+      }
+    })
+  } catch (error) {
+    console.error('标记消息已读失败:', error)
   }
+}
 
-  messages.value.push(replyMessage)
-  scrollToBottom()
+// 启动消息监听
+const startMessageWatcher = () => {
+  console.log('启动消息监听, roomId:', roomId)
+  
+  try {
+    const db = app.database()
+    
+    messageWatcher = db.collection('messages')
+      .where({
+        roomId: roomId
+      })
+      .orderBy('sendTime', 'desc')
+      .limit(1)
+      .watch({
+        onChange: (snapshot) => {
+          console.log('收到新消息:', snapshot)
+          
+          if (snapshot.docs.length > 0) {
+            const newMessage = snapshot.docs[0]
+            
+            // 检查是否是新消息（不是自己发送的）
+            if (newMessage.senderId !== currentUserId.value) {
+              // 检查消息是否已存在
+              const existingMessage = messages.value.find(msg => 
+                (msg as any)._id === newMessage._id || 
+                (msg.sendTime.getTime() === new Date(newMessage.sendTime).getTime() && 
+                 msg.senderId === newMessage.senderId)
+              )
+              
+              if (!existingMessage) {
+                console.log('添加新消息到列表:', newMessage)
+                messages.value.push({
+                  id: newMessage._id,
+                  roomId: newMessage.roomId,
+                  senderId: newMessage.senderId,
+                  content: newMessage.content,
+                  type: newMessage.type,
+                  sendTime: new Date(newMessage.sendTime),
+                  status: newMessage.status
+                })
+                
+                // 滚动到底部
+                scrollToBottom()
+                
+                // 标记为已读
+                markMessagesAsRead()
+              }
+            }
+          }
+        },
+        onError: (error) => {
+          console.error('消息监听失败:', error)
+        }
+      })
+  } catch (error) {
+    console.error('启动消息监听失败:', error)
+  }
+}
+
+// 停止消息监听
+const stopMessageWatcher = () => {
+  if (messageWatcher) {
+    messageWatcher.close()
+    messageWatcher = null
+    console.log('已停止消息监听')
+  }
 }
 
 // 滚动到底部
@@ -398,7 +499,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  // TODO: 清理监听器
+  // 清理消息监听器
+  stopMessageWatcher()
   console.log('清理聊天室监听器')
 })
 </script>

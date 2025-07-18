@@ -90,16 +90,20 @@ async function joinMatchQueue(uid, event) {
       const roomId = await createChatRoom(uid, matchedUser.uid)
       
       // 更新两个用户的匹配状态
+      const matchTime = new Date()
+      
       await Promise.all([
         db.collection('match_queue').doc(matchedUser._id).update({
           status: 'matched',
           matchedWith: uid,
-          roomId: roomId
+          roomId: roomId,
+          matchTime: matchTime // 添加匹配成功时间
         }),
         db.collection('match_queue').add({
           uid: uid,
           status: 'matched',
-          createTime: new Date(),
+          createTime: matchTime, // 使用统一的匹配时间
+          matchTime: matchTime,
           matchedWith: matchedUser.uid,
           roomId: roomId,
           userInfo: userInfo

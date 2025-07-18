@@ -311,34 +311,54 @@ const clearMatchTimer = () => {
   }
 }
 
-// 开始监听匹配结果
+// 开始监听匹配结果 - 只监听waiting状态记录的变化
 const startMatchWatcher = () => {
   const db = app.database()
   
-  // 监听匹配队列变化
+  console.log('开始监听waiting状态记录变化:', userInfo.value.uid)
+  
+  // 只监听当前用户的waiting状态记录
   matchWatcher = db.collection('match_queue')
     .where({
-      status: 'matched'
+      uid: userInfo.value.uid,
+      status: 'waiting'
     })
     .watch({
       onChange: (snapshot) => {
-        console.log('匹配队列变化:', snapshot)
+        console.log('waiting记录变化:', snapshot)
         
-        if (snapshot.docs.length > 0) {
-          const matchedRecord = snapshot.docs.find((doc: any) => 
-            doc.uid === userInfo.value.uid && doc.status === 'matched'
-          )
-          
-          if (matchedRecord) {
-            clearMatchTimer()
-            matchSuccess(matchedRecord.roomId)
-          }
+        // 如果waiting记录消失了，说明状态变成了matched
+        if (snapshot.docs.length === 0) {
+          console.log('waiting记录消失，匹配成功')
+          clearMatchTimer()
+          checkMatchResult()
         }
       },
       onError: (error) => {
-        console.error('监听匹配结果失败:', error)
+        console.error('监听waiting记录失败:', error)
       }
     })
+}
+
+// 检查匹配结果
+const checkMatchResult = async () => {
+  try {
+    const result = await app.callFunction({
+      name: 'userMatch',
+      data: {
+        action: 'check',
+        uid: userInfo.value.uid
+      }
+    })
+    
+    console.log('检查匹配结果:', result)
+    
+    if (result.result.code === 0 && result.result.data.status === 'matched') {
+      matchSuccess(result.result.data.roomId)
+    }
+  } catch (error) {
+    console.error('检查匹配结果失败:', error)
+  }
 }
 
 // 检查匹配超时
