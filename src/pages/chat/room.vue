@@ -121,6 +121,8 @@ const showExitDialog = ref(false)
 
 // 消息监听器
 let messageWatcher: any = null
+// 房间状态监听器
+let roomWatcher: any = null
 
 // 防重复发送
 let lastSendTime = 0
@@ -164,7 +166,9 @@ const initChatRoom = async () => {
 
     // 启动实时消息监听
     startMessageWatcher()
-    console.log('开始监听聊天室消息...')
+    // 启动房间状态监听
+    startRoomWatcher()
+    console.log('开始监听聊天室消息和房间状态...')
     
   } catch (error) {
     console.error('初始化聊天室失败:', error)
@@ -483,6 +487,45 @@ const stopMessageWatcher = () => {
   }
 }
 
+// 启动房间状态监听
+const startRoomWatcher = () => {
+  console.log('启动房间状态监听, roomId:', roomId)
+  
+  try {
+    const db = app.database()
+    
+    roomWatcher = db.collection('chat_rooms')
+      .doc(roomId)
+      .watch({
+        onChange: (snapshot) => {
+          if (snapshot.docs && snapshot.docs.length > 0) {
+            const room = snapshot.docs[0]
+            console.log('房间状态变化:', room)
+            
+            // 检查房间是否被关闭
+            if (room.status === 'closed' && room.closedBy !== currentUserId.value) {
+              handlePartnerLeft()
+            }
+          }
+        },
+        onError: (error) => {
+          console.error('房间状态监听失败:', error)
+        }
+      })
+  } catch (error) {
+    console.error('启动房间状态监听失败:', error)
+  }
+}
+
+// 停止房间状态监听
+const stopRoomWatcher = () => {
+  if (roomWatcher) {
+    roomWatcher.close()
+    roomWatcher = null
+    console.log('已停止房间状态监听')
+  }
+}
+
 // 滚动到底部
 const scrollToBottom = async () => {
   await nextTick()
@@ -533,17 +576,40 @@ const confirmExit = () => {
 // 退出聊天
 const exitChat = async () => {
   try {
-    // TODO: 调用云函数关闭房间
-    console.log('退出聊天房间:', roomId)
+    // 停止消息监听
+    stopMessageWatcher()
+    // 停止房间状态监听
+    stopRoomWatcher()
     
-    showToast('已退出聊天', 'none')
+    // 调用云函数关闭房间
+    console.log('退出聊天房间:', roomId)
+    const result = await app.callFunction({
+      name: 'roomInfo',
+      data: {
+        action: 'exitRoom',
+        roomId: roomId,
+        userId: currentUserId.value
+      }
+    })
+    
+    console.log('退出房间结果:', result)
+    
+    if (result.result.code === 0) {
+      console.log('房间关闭成功:', result.result.data)
+      showToast('已退出聊天', 'none')
+    } else {
+      console.warn('关闭房间警告:', result.result.message)
+      showToast('已退出聊天', 'none') // 即使服务端失败也让用户退出
+    }
     
     // 返回聊天主页
     navigateTo('/pages/chat/home', 'redirectTo')
     
   } catch (error) {
     console.error('退出聊天失败:', error)
-    showToast('退出失败', 'error')
+    // 即使出错也要让用户能够退出
+    showToast('已退出聊天', 'none')
+    navigateTo('/pages/chat/home', 'redirectTo')
   }
 }
 
@@ -562,6 +628,8 @@ onMounted(() => {
 onUnmounted(() => {
   // 清理消息监听器
   stopMessageWatcher()
+  // 清理房间状态监听器
+  stopRoomWatcher()
   console.log('清理聊天室监听器')
 })
 </script>
