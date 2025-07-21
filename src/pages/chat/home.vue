@@ -278,8 +278,8 @@ const matchSuccess = (roomId: string) => {
   
   // 1.5秒后跳转到聊天房间
   setTimeout(() => {
-    navigateTo(`/pages/chat/room?roomId=${roomId}`, 'navigateTo')
-  }, 1500)
+    navigateTo(`/pages/chat/room?roomId=${roomId}`, 'redirectTo')
+  }, 1500) 
 }
 
 // 匹配失败

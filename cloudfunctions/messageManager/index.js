@@ -37,6 +37,7 @@ exports.main = async (event, context) => {
 
 // 发送消息
 async function sendMessage(roomId, message, senderUid) {
+  console.log('(云函数)发送消息:', { roomId, message, senderUid })
   if (!roomId || !message || !senderUid) {
     return {
       code: -1,

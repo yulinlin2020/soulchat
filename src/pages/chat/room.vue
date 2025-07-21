@@ -100,6 +100,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { navigateTo, showToast, formatDate, parseQueryString } from '@/utils/index'
 import { auth, app } from '@/utils/cloudbase'
 
@@ -133,11 +134,13 @@ const canSend = computed(() => {
 })
 
 // 获取页面参数
-const getPageParams = () => {
+const getPageParams = (options: any) => {
   // 获取页面参数
-  const pages = getCurrentPages()
-  const currentPage = pages[pages.length - 1] as any
-  const options = currentPage.options || {}
+  // const pages = getCurrentPages()
+  // const currentPage = pages[pages.length - 1] as any
+  // const options = currentPage.options || {}
+  // console.log('获取当前页面:', currentPage)
+  console.log('获取页面参数:', options)
   
   roomId = options.roomId || ''
   console.log('房间ID:', roomId)
@@ -620,8 +623,8 @@ const handlePartnerLeft = () => {
   showToast('对方已离开聊天', 'none')
 }
 
-onMounted(() => {
-  getPageParams()
+onLoad((options) => {
+  getPageParams(options)
   initChatRoom()
 })
 
