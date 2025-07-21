@@ -2,7 +2,7 @@
   <view class="chat-room">
     <!-- 聊天头部 -->
     <view class="chat-header">
-      <button class="back-btn" @click="exitChat">
+      <button class="back-btn" @click="showExitConfirm">
         <text class="back-icon">←</text>
       </button>
       <view class="chat-info">
@@ -640,17 +640,23 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #f5f5f5;
+  position: relative;
 }
 
 /* 聊天头部 */
 .chat-header {
   background: #6c5ce7;
-  padding: 20rpx 30rpx;
+  padding: 60rpx 30rpx 20rpx;
   display: flex;
   align-items: center;
   color: white;
-  position: relative;
-  z-index: 10;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  height: 140rpx;
+  box-sizing: border-box;
 }
 
 .back-btn {
@@ -717,6 +723,9 @@ onUnmounted(() => {
   flex: 1;
   padding: 20rpx;
   background: #f5f5f5;
+  margin-top: 140rpx; /* 为固定头部留出空间 */
+  margin-bottom: 120rpx; /* 为固定输入框留出空间 */
+  box-sizing: border-box;
 }
 
 .message-container {
@@ -815,6 +824,12 @@ onUnmounted(() => {
   background: white;
   padding: 20rpx;
   border-top: 1rpx solid #eee;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  box-sizing: border-box;
 }
 
 .input-container {

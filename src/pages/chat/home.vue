@@ -406,11 +406,13 @@ onUnmounted(() => {
 
 <style scoped>
 .chat-home {
-  min-height: 100vh;
+  height: 100vh;
   background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
-  padding: 40rpx;
+  padding: 16rpx 32rpx; /* 调整内边距 */
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box; /* 包含内边距在内 */
 }
 
 /* 用户信息卡片 */
@@ -418,11 +420,12 @@ onUnmounted(() => {
   background: rgba(255,255,255,0.15);
   backdrop-filter: blur(10rpx);
   border-radius: 24rpx;
-  padding: 30rpx;
-  margin-bottom: 40rpx;
+  padding: 20rpx 30rpx;
+  margin-bottom: 20rpx;
   display: flex;
   align-items: center;
   border: 1rpx solid rgba(255,255,255,0.2);
+  flex-shrink: 0;
 }
 
 .avatar {
@@ -503,23 +506,24 @@ onUnmounted(() => {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 60rpx 0;
+  padding: 20rpx 0; /* 减少垂直padding */
+  min-height: 0; /* 允许flex子项收缩 */
 }
 
 /* 匹配状态 */
 .match-status {
   text-align: center;
-  margin-bottom: 60rpx;
+  margin-bottom: 30rpx;
 }
 
 .status-animation {
-  width: 120rpx;
-  height: 120rpx;
+  width: 90rpx;
+  height: 90rpx;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 30rpx;
+  margin: 0 auto 24rpx;
   background: rgba(255,255,255,0.2);
 }
 
@@ -573,7 +577,7 @@ onUnmounted(() => {
 }
 
 .match-intro {
-  margin-bottom: 60rpx;
+  margin-bottom: 50rpx;
 }
 
 .intro-title {
@@ -623,7 +627,7 @@ onUnmounted(() => {
   background: rgba(255,255,255,0.2);
   border: 2rpx solid rgba(255,255,255,0.3);
   border-radius: 50rpx;
-  padding: 20rpx 40rpx;
+  padding: 16rpx 32rpx;
   color: white;
 }
 
@@ -639,8 +643,10 @@ onUnmounted(() => {
 /* 底部提示 */
 .tips {
   text-align: center;
-  margin-top: auto;
-  padding-top: 40rpx;
+  /* margin-top: auto;
+  padding-top: 40rpx; */
+  padding: 16rpx 0; /* 减少垂直padding */
+  flex-shrink: 0; /* 防止被压缩 */
 }
 
 .tips-text {
