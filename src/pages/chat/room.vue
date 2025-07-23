@@ -654,7 +654,7 @@ onUnmounted(() => {
   align-items: center;
   color: white;
   position: fixed;
-  top: 0;
+  top: 85rpx;
   left: 0;
   right: 0;
   z-index: 100;
